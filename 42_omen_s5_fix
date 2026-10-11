@@ -1,0 +1,16 @@
+#!/bin/sh
+set -e
+[ -f /boot/acpi-omen-s5.bios ] || exit 0
+cat <<GRUB
+if [ -z "\${boot_once}" ]; then
+  insmod smbios
+  smbios --type 0 --get-string 5 --set omen_bios
+  if [ "\${omen_bios}" = "$(cat /boot/acpi-omen-s5.bios)" ]; then
+    set default="omen-s5-fix"
+  fi
+fi
+GRUB
+GRUB_EARLY_INITRD_LINUX_CUSTOM=acpi-omen-s5.cpio GRUB_DISABLE_SUBMENU=true /etc/grub.d/10_linux 2>/dev/null \
+  | awk '/^menuentry /{p=1} p{print} p&&/^}/{exit}' \
+  | sed -e "s/^menuentry '[^']*'/menuentry 'Ubuntu (OMEN S5 fix)'/" \
+        -e "s/\$menuentry_id_option '[^']*'/\$menuentry_id_option 'omen-s5-fix'/"

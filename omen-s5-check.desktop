@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=OMEN S5 fix check
+Exec=/usr/local/bin/omen-s5-check
+NoDisplay=true
+X-GNOME-Autostart-Delay=15
