@@ -36,7 +36,18 @@ if grep -q 'PEGP.OMPR = 0x03' dsdt.dsl; then
     echo "== 5/6 $CPIO già presente"
 else
     echo "== 4/6 correzione e compilazione della DSDT"
-    python3 -I "$REPO/patch-dsdt.py" dsdt.dsl fixed.dsl
+    HDR='^DefinitionBlock ("", "DSDT", 2, "HPQOEM", "8E35    ", 0x'
+    PEGP='    External (_SB_.PCI0.GPP0.PEGP, DeviceObj)'
+    NPTS='            \_SB.PCI0.NPTS (Arg0)'
+    [ "$(grep -c "$HDR" dsdt.dsl)" = 1 ] || die "intestazione DSDT inattesa"
+    [ "$(grep -cxF "$PEGP" dsdt.dsl)" = 1 ] || die "External di PEGP non trovato"
+    [ "$(grep -cxF "$NPTS" dsdt.dsl)" = 1 ] && [ "$(grep -A1 -xF "$NPTS" dsdt.dsl | tail -1)" = "        }" ] || die "struttura di _PTS inattesa"
+    REV="$(sed -n "s/${HDR}\([0-9A-Fa-f]\{8\}\))$/\1/p" dsdt.dsl)"
+    NEW="$(printf '%08X' $((16#$REV + 1)))"
+    sed -e "/^DefinitionBlock/s/0x${REV})$/0x${NEW})/" \
+        -e "/^    External (_SB_\.PCI0\.GPP0\.PEGP, DeviceObj)$/r $REPO/externals.asl" \
+        -e "/^            \\\\_SB\.PCI0\.NPTS (Arg0)$/r $REPO/pts-s5.asl" \
+        dsdt.dsl > fixed.dsl
     iasl -tc fixed.dsl >/dev/null 2>&1 || die "compilazione fallita"
     mkdir -p check root/kernel/firmware/acpi
     cp fixed.aml check/ && (cd check && iasl -d fixed.aml >/dev/null 2>&1)
