@@ -13,6 +13,8 @@ Files created: `/boot/acpi-omen-s5.cpio`, `/boot/acpi-omen-s5.bios`, `/etc/defau
 
 Requirements: Ubuntu/Debian with GRUB.
 
+Tested on OMEN 16-ap0004 (Ryzen 9 8940HX, RTX 5070), BIOS F.11, Ubuntu 26.04, kernel 7.0: power-off drain went from ~21 W to ~1 W. Experimental, use at your own risk.
+
 After a BIOS update: `uninstall.sh`, reboot, `install.sh`.
 
 ## Secure Boot
