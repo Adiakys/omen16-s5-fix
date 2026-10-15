@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+if [ ! -d /sys/module/omen_s5 ]; then
+    notify-send -u critical -i battery-caution "OMEN S5 fix" "Il modulo omen_s5 non è caricato: da spento il PC consuma batteria. Rilancia install.sh."
+fi

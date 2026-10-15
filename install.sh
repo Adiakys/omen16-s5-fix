@@ -4,71 +4,70 @@ set -euo pipefail
 [ "$(id -u)" -eq 0 ] || exec sudo "$0" "$@"
 
 REPO="$(cd "$(dirname "$0")" && pwd)"
-CPIO=/boot/acpi-omen-s5.cpio
-STAMP=/boot/acpi-omen-s5.bios
-BIOS="$(cat /sys/class/dmi/id/bios_version)"
+NAME=omen-s5
+VER="$(sed -n 's/^PACKAGE_VERSION="\(.*\)"$/\1/p' "$REPO/src/dkms.conf")"
+KVER="$(uname -r)"
+SRC="/usr/src/$NAME-$VER"
 
 die() { echo "errore: $*" >&2; exit 1; }
 
-echo "== 1/7 controlli"
-[ "$(cat /sys/class/dmi/id/board_name)" = "8E35" ] || die "scheda madre diversa da 8E35"
-grep -q '^CONFIG_ACPI_TABLE_UPGRADE=y' "/boot/config-$(uname -r)" || die "kernel senza CONFIG_ACPI_TABLE_UPGRADE"
-grep -q '\[none\]' /sys/kernel/security/lockdown 2>/dev/null || die "Secure Boot attivo: il kernel ignorerebbe il fix (vedi README)"
-command -v update-grub >/dev/null || die "update-grub non trovato"
+echo "== 1/6 controlli"
+[ "$(cat /sys/class/dmi/id/board_name)" = "8E35" ] || die "scheda madre diversa da 8E35 (HP OMEN 16-ap0xxx)"
 
-echo "== 2/7 dipendenze"
-command -v iasl >/dev/null && command -v cpio >/dev/null || apt-get install -y acpica-tools cpio >/dev/null
-
-echo "== 3/7 lettura tabelle ACPI del BIOS"
-W="$(mktemp -d)"
-trap 'rm -rf "$W"' EXIT
-cd "$W"
-cp /sys/firmware/acpi/tables/DSDT dsdt.aml
-for t in /sys/firmware/acpi/tables/SSDT*; do cp "$t" "$(basename "$t").aml"; done
-iasl -d dsdt.aml >/dev/null 2>&1
-for s in SSDT*.aml; do iasl -e dsdt.aml -d "$s" >/dev/null 2>&1 || true; done
-grep -q 'OMPR == 0x03' SSDT*.dsl && grep -q 'PG00._OFF ()' SSDT*.dsl || die "firmware non compatibile"
-
-if grep -q 'PEGP.OMPR = 0x03' dsdt.dsl; then
-    echo "== 4/7 DSDT già corretta (fix attivo), salto la ricompilazione"
-    [ -f "$CPIO" ] && [ "$(cat "$STAMP" 2>/dev/null)" = "$BIOS" ] || die "BIOS cambiato o file mancanti: riavvia e rilancia install.sh"
-    echo "== 5/7 $CPIO già presente"
-else
-    echo "== 4/7 correzione e compilazione della DSDT"
-    HDR='^DefinitionBlock ("", "DSDT", 2, "HPQOEM", "8E35    ", 0x'
-    PEGP='    External (_SB_.PCI0.GPP0.PEGP, DeviceObj)'
-    NPTS='            \_SB.PCI0.NPTS (Arg0)'
-    [ "$(grep -c "$HDR" dsdt.dsl)" = 1 ] || die "intestazione DSDT inattesa"
-    [ "$(grep -cxF "$PEGP" dsdt.dsl)" = 1 ] || die "External di PEGP non trovato"
-    [ "$(grep -cxF "$NPTS" dsdt.dsl)" = 1 ] && [ "$(grep -A1 -xF "$NPTS" dsdt.dsl | tail -1)" = "        }" ] || die "struttura di _PTS inattesa"
-    REV="$(sed -n "s/${HDR}\([0-9A-Fa-f]\{8\}\))$/\1/p" dsdt.dsl)"
-    NEW="$(printf '%08X' $((16#$REV + 1)))"
-    sed -e "/^DefinitionBlock/s/0x${REV})$/0x${NEW})/" \
-        -e "/^    External (_SB_\.PCI0\.GPP0\.PEGP, DeviceObj)$/r $REPO/externals.asl" \
-        -e "/^            \\\\_SB\.PCI0\.NPTS (Arg0)$/r $REPO/pts-s5.asl" \
-        dsdt.dsl > fixed.dsl
-    iasl -tc fixed.dsl >/dev/null 2>&1 || die "compilazione fallita"
-    mkdir -p check root/kernel/firmware/acpi
-    cp fixed.aml check/ && (cd check && iasl -d fixed.aml >/dev/null 2>&1)
-    grep -q 'PEGP.OMPR = 0x03' check/fixed.dsl || die "verifica della DSDT compilata fallita"
-
-    echo "== 5/7 copia di $CPIO"
-    cp fixed.aml root/kernel/firmware/acpi/dsdt.aml
-    (cd root && find kernel | cpio -H newc --create --quiet) > acpi.cpio
-    install -m 0644 acpi.cpio "$CPIO"
-    echo "$BIOS" > "$STAMP"
+echo "== 2/6 dipendenze"
+if ! command -v dkms >/dev/null || [ ! -d "/lib/modules/$KVER/build" ]; then
+    if command -v apt-get >/dev/null; then apt-get install -y dkms "linux-headers-$KVER"
+    elif command -v dnf >/dev/null; then dnf install -y dkms "kernel-devel-$KVER"
+    elif command -v pacman >/dev/null; then pacman -S --needed --noconfirm dkms linux-headers
+    elif command -v zypper >/dev/null; then zypper install -y dkms kernel-devel
+    else die "installa dkms e gli header del kernel $KVER"
+    fi
 fi
 
-echo "== 6/7 configurazione di GRUB"
-rm -f /etc/default/grub.d/omen-acpi.cfg /etc/grub.d/42_omen_nofix
-install -m 0755 "$REPO/42_omen_s5_fix" /etc/grub.d/42_omen_s5_fix
-update-grub >/dev/null 2>&1
-awk "/menuentry 'Ubuntu \\(OMEN S5 fix\\)'/{p=1} p{print} p&&/^}/{exit}" /boot/grub/grub.cfg > fix.cfg
-grep -q 'initrd.*acpi-omen-s5.cpio' fix.cfg || die "GRUB non carica il fix"
-[ "$(grep -c 'acpi-omen-s5.cpio' /boot/grub/grub.cfg)" = 1 ] || die "il fix compare anche nelle voci standard di GRUB"
+echo "== 3/6 compilazione e installazione"
+dkms remove "$NAME/$VER" --all >/dev/null 2>&1 || true
+rm -rf "$SRC"
+install -d "$SRC"
+install -m 0644 "$REPO"/src/{omen_s5.c,os5f_aml.h,Makefile,dkms.conf} "$SRC/"
+dkms add "$NAME/$VER" >/dev/null
+dkms install "$NAME/$VER" >/dev/null || die "compilazione fallita, vedi /var/lib/dkms/$NAME/$VER/build/make.log"
 
-echo "== 7/7 controllo all'avvio"
-install -m 0755 "$REPO/omen-s5-check" /usr/local/bin/omen-s5-check
-install -m 0644 "$REPO/omen-s5-check.desktop" /etc/xdg/autostart/omen-s5-check.desktop
+echo "== 4/6 firma"
+SIGNER="$(modinfo -k "$KVER" -F signer omen_s5)"
+[ -n "$SIGNER" ] || die "DKMS non ha firmato il modulo: imposta mok_signing_key e mok_certificate in /etc/dkms/framework.conf"
+CERT=
+for c in /var/lib/shim-signed/mok/MOK.der /var/lib/dkms/mok.pub; do
+    [ -f "$c" ] && openssl x509 -inform der -in "$c" -noout -subject 2>/dev/null | grep -qF "$SIGNER" && CERT=$c && break
+done
+echo "firmato da: $SIGNER${CERT:+ ($CERT)}"
 
-echo "fatto: riavvia e verifica con  journalctl -k -b | grep 'Table Upgrade'"
+echo "== 5/6 Secure Boot"
+ENROLL=
+if mokutil --sb-state 2>/dev/null | grep -q 'SecureBoot enabled'; then
+    [ -n "$CERT" ] || die "certificato di firma non trovato, impossibile registrarlo in MOK"
+    if mokutil --test-key "$CERT" | grep -q 'not enrolled'; then
+        echo "la chiave di firma va registrata in MOK: scegli una password temporanea"
+        mokutil --import "$CERT"
+        ENROLL=1
+    else
+        echo "chiave di firma già registrata"
+    fi
+else
+    echo "Secure Boot disattivato"
+fi
+
+echo "== 6/6 caricamento all'avvio"
+echo omen_s5 > /etc/modules-load.d/omen-s5.conf
+install -m 0755 "$REPO/tools/omen-s5-check" /usr/local/bin/omen-s5-check
+install -m 0644 "$REPO/tools/omen-s5-check.desktop" /etc/xdg/autostart/omen-s5-check.desktop
+if [ -d /sys/module/omen_s5 ]; then
+    echo "fatto: modulo già caricato, la nuova versione sarà attiva dal prossimo avvio"
+elif modprobe omen_s5 2>/dev/null; then
+    echo "fatto: modulo attivo"
+elif [ -n "$ENROLL" ]; then
+    echo "fatto: riavvia e in MokManager scegli 'Enroll MOK' con la password appena scelta"
+else
+    die "il modulo non si carica, vedi  journalctl -k -b | grep omen_s5"
+fi
+[ -n "$ENROLL" ] && [ -d /sys/module/omen_s5 ] && echo "al riavvio, in MokManager scegli 'Enroll MOK' con la password appena scelta"
+exit 0
