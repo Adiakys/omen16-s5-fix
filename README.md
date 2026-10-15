@@ -20,6 +20,8 @@ sudo ./uninstall.sh   # remove everything
 5. with Secure Boot on, enrolls that key in MOK if needed (`mokutil --import`: choose a temporary password, reboot, pick "Enroll MOK");
 6. loads the module now and at every boot, and installs a login check that notifies if the module is not loaded.
 
+A BIOS update can wipe the enrolled MOK keys: the module then fails to load under Secure Boot. Re-run `install.sh` to enroll the key again.
+
 ## How it works
 
 At load the module checks the board (DMI) and the firmware objects it needs, then adds a tiny ACPI method, `\OS5F` (`src/os5f.asl`):
