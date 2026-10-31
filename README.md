@@ -4,6 +4,18 @@ On the HP OMEN 16-ap0xxx (board 8E35) under Linux, the NVIDIA GPU stays powered 
 
 `omen_s5` is a small kernel module that turns the dGPU off at the end of the shutdown sequence, so the laptop really reaches S5. It works with Secure Boot enabled.
 
+## Symptoms
+
+- The battery drains while the laptop is shut down: a full charge is gone within a few hours, or the laptop is dead the next morning.
+- Only after shutting down from Linux; after shutting down from Windows the charge holds.
+- The laptop draws about 20 W while off, because the NVIDIA GPU stays powered after power-off.
+
+It applies if this prints `8E35`:
+
+```
+cat /sys/class/dmi/id/board_name
+```
+
 ## Install
 
 ### Any distro: `install.sh`
