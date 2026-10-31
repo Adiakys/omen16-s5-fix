@@ -26,8 +26,11 @@ static int omen_s5_power_off_prepare(struct sys_off_data *data)
 	status = acpi_evaluate_integer(NULL, "\\OS5F", NULL, &ret);
 	if (ACPI_FAILURE(status))
 		pr_err("\\OS5F failed: %s\n", acpi_format_exception(status));
+	else if (!ret)
+		pr_info("dGPU power-off before S5: objects not found\n");
 	else
-		pr_info("dGPU power-off before S5: %s\n", ret ? "done" : "objects not found");
+		pr_info("dGPU power-off before S5: done%s\n",
+			ret == 2 ? " (NVDE armed by omen_s5)" : "");
 	return NOTIFY_DONE;
 }
 

@@ -1,0 +1,9 @@
+post_install() {
+  echo "omen_s5 loads at every boot; to load it now:  sudo modprobe omen_s5"
+  echo "With Secure Boot through shim (kernel lockdown) enroll the DKMS key once:"
+  echo "  sudo mokutil --import /var/lib/dkms/mok.pub   then reboot and pick 'Enroll MOK'"
+}
+
+post_upgrade() {
+  echo "the new omen_s5 takes over after a reboot"
+}

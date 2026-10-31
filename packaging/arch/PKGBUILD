@@ -1,0 +1,20 @@
+# Maintainer: Adiakys <andreaficarra05@gmail.com>
+pkgname=omen-s5-dkms
+pkgver=1.1
+pkgrel=1
+pkgdesc="Power off the NVIDIA dGPU at shutdown on HP OMEN 16-ap0xxx (board 8E35), so the laptop really reaches S5 (DKMS)"
+arch=('any')
+url="https://github.com/Adiakys/omen16-s5-fix"
+license=('GPL-2.0-only')
+depends=('dkms')
+makedepends=('git')
+install=omen-s5-dkms.install
+source=("omen16-s5-fix::git+$url.git#tag=v$pkgver")
+sha256sums=('SKIP')
+
+package() {
+  cd omen16-s5-fix/src
+  install -Dm644 omen_s5.c os5f_aml.h Makefile dkms.conf -t "$pkgdir/usr/src/omen-s5-$pkgver/"
+  install -dm755 "$pkgdir/usr/lib/modules-load.d"
+  echo omen_s5 > "$pkgdir/usr/lib/modules-load.d/omen-s5.conf"
+}
